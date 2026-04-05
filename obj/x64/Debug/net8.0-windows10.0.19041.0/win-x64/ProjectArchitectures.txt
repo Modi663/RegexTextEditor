@@ -1,0 +1,1 @@
+C:\Users\vadim\source\repos\RegexTextEditor\RegexTextEditor.csproj;x64

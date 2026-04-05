@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "RegexTextEditor (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "RegexTextEditor (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
