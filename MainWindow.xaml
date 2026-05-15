@@ -8,8 +8,10 @@
     mc:Ignorable="d"
     Title="Regex Text Editor">
 
-    <Grid Background="Transparent"
+    <Grid x:Name="RootGrid"
+          Background="{ThemeResource AppWindowBackgroundBrush}"
           KeyboardAcceleratorPlacementMode="Hidden">
+
         <Grid.KeyboardAccelerators>
             <KeyboardAccelerator Key="N" Modifiers="Control" Invoked="NewKeyboardAccelerator_Invoked"/>
             <KeyboardAccelerator Key="O" Modifiers="Control" Invoked="OpenKeyboardAccelerator_Invoked"/>
@@ -22,28 +24,6 @@
             <KeyboardAccelerator Key="F1" Invoked="HelpKeyboardAccelerator_Invoked"/>
         </Grid.KeyboardAccelerators>
 
-        <Grid.Resources>
-            <Style x:Key="TopBarButtonStyle" TargetType="Button">
-                <Setter Property="Padding" Value="10,6"/>
-                <Setter Property="Margin" Value="2,0"/>
-                <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="BorderBrush" Value="Transparent"/>
-                <Setter Property="Foreground" Value="#F3F3F3"/>
-            </Style>
-
-            <Style x:Key="FlatIconButtonStyle" TargetType="Button">
-                <Setter Property="Padding" Value="6"/>
-                <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="BorderBrush" Value="Transparent"/>
-                <Setter Property="Foreground" Value="#F3F3F3"/>
-            </Style>
-
-            <Style x:Key="RegexActionButtonStyle" TargetType="Button">
-                <Setter Property="Padding" Value="10,7"/>
-                <Setter Property="MinWidth" Value="110"/>
-            </Style>
-        </Grid.Resources>
-
         <Grid.RowDefinitions>
             <RowDefinition Height="36"/>
             <RowDefinition Height="36"/>
@@ -51,12 +31,9 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Custom title bar -->
         <Border Grid.Row="0"
                 x:Name="TitleBarRoot"
-                Background="Transparent"
-                BorderBrush="#24FFFFFF"
-                BorderThickness="0,0,0,1">
+                Style="{StaticResource TitleBarBorderStyle}">
             <Grid x:Name="AppTitleBar">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition x:Name="LeftInsetColumn" Width="0"/>
@@ -76,31 +53,21 @@
                                Source="ms-appx:///Assets/StoreLogo.png"/>
 
                         <TextBlock x:Name="DocumentTitleTextBlock"
-                                   Text="Без имени"
-                                   Foreground="#F3F3F3"
-                                   FontSize="13"
-                                   FontWeight="SemiBold"
-                                   VerticalAlignment="Center"/>
+                                   Text="{Binding DocumentTitle}"
+                                   Style="{StaticResource TitleDocumentTextStyle}"/>
 
                         <TextBlock Text="—"
-                                   Foreground="#AFAFAF"
-                                   FontSize="13"
-                                   VerticalAlignment="Center"/>
+                                   Style="{StaticResource TitleSecondaryTextStyle}"/>
 
                         <TextBlock Text="Regex Text Editor"
-                                   Foreground="#AFAFAF"
-                                   FontSize="13"
-                                   VerticalAlignment="Center"/>
+                                   Style="{StaticResource TitleSecondaryTextStyle}"/>
                     </StackPanel>
                 </Grid>
             </Grid>
         </Border>
 
-        <!-- Command bar -->
         <Border Grid.Row="1"
-                Background="Transparent"
-                BorderBrush="#20FFFFFF"
-                BorderThickness="0,0,0,1">
+                Style="{StaticResource CommandBarBorderStyle}">
             <Grid Padding="8,0,8,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -115,12 +82,17 @@
                             Content="Файл">
                         <Button.Flyout>
                             <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                                <MenuFlyoutItem Text="Новый" Click="MenuNew_Click"/>
-                                <MenuFlyoutItem Text="Открыть" Click="MenuOpen_Click"/>
-                                <MenuFlyoutItem Text="Сохранить" Click="MenuSave_Click"/>
-                                <MenuFlyoutItem Text="Сохранить как" Click="MenuSaveAs_Click"/>
+                                <MenuFlyoutItem Text="Новый"
+                                                Command="{x:Bind ViewModel.NewCommand}"/>
+                                <MenuFlyoutItem Text="Открыть"
+                                                Command="{x:Bind ViewModel.OpenCommand}"/>
+                                <MenuFlyoutItem Text="Сохранить"
+                                                Command="{x:Bind ViewModel.SaveCommand}"/>
+                                <MenuFlyoutItem Text="Сохранить как"
+                                                Command="{x:Bind ViewModel.SaveAsCommand}"/>
                                 <MenuFlyoutSeparator/>
-                                <MenuFlyoutItem Text="Выход" Click="MenuExit_Click"/>
+                                <MenuFlyoutItem Text="Выход"
+                                                Command="{x:Bind ViewModel.ExitCommand}"/>
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
@@ -129,12 +101,17 @@
                             Content="Изменить">
                         <Button.Flyout>
                             <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                                <MenuFlyoutItem Text="Найти / Regex" Click="MenuFind_Click"/>
-                                <MenuFlyoutItem Text="Следующее совпадение" Click="MenuNextMatch_Click"/>
-                                <MenuFlyoutItem Text="Предыдущее совпадение" Click="MenuPrevMatch_Click"/>
-                                <MenuFlyoutItem Text="Заменить всё" Click="MenuReplaceAll_Click"/>
+                                <MenuFlyoutItem Text="Найти / Regex"
+                                                Command="{x:Bind ViewModel.OpenRegexPanelCommand}"/>
+                                <MenuFlyoutItem Text="Следующее совпадение"
+                                                Command="{x:Bind ViewModel.NextMatchCommand}"/>
+                                <MenuFlyoutItem Text="Предыдущее совпадение"
+                                                Command="{x:Bind ViewModel.PreviousMatchCommand}"/>
+                                <MenuFlyoutItem Text="Заменить всё"
+                                                Command="{x:Bind ViewModel.ReplaceAllCommand}"/>
                                 <MenuFlyoutSeparator/>
-                                <MenuFlyoutItem Text="Очистить документ" Click="MenuClearDocument_Click"/>
+                                <MenuFlyoutItem Text="Очистить документ"
+                                                Command="{x:Bind ViewModel.ClearDocumentCommand}"/>
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
@@ -144,14 +121,30 @@
                         <Button.Flyout>
                             <MenuFlyout Placement="BottomEdgeAlignedLeft">
                                 <ToggleMenuFlyoutItem x:Name="ToggleStatusBarMenuItem"
-                                                      Text="Строка состояния"
-                                                      IsChecked="True"
-                                                      Click="ToggleStatusBarMenuItem_Click"/>
+                                  Text="Строка состояния"
+                                  IsChecked="True"
+                                  Click="ToggleStatusBarMenuItem_Click"/>
 
                                 <ToggleMenuFlyoutItem x:Name="ToggleWordWrapMenuItem"
-                                                      Text="Перенос строк"
-                                                      IsChecked="False"
-                                                      Click="ToggleWordWrapMenuItem_Click"/>
+                                  Text="Перенос строк"
+                                  IsChecked="False"
+                                  Click="ToggleWordWrapMenuItem_Click"/>
+
+                                <MenuFlyoutSeparator/>
+
+                                <MenuFlyoutSubItem Text="Тема">
+                                    <ToggleMenuFlyoutItem Text="Системная"
+                                      IsChecked="{x:Bind ViewModel.IsSystemThemeSelected, Mode=OneWay}"
+                                      Command="{x:Bind ViewModel.UseSystemThemeCommand}"/>
+
+                                    <ToggleMenuFlyoutItem Text="Светлая"
+                                      IsChecked="{x:Bind ViewModel.IsLightThemeSelected, Mode=OneWay}"
+                                      Command="{x:Bind ViewModel.UseLightThemeCommand}"/>
+
+                                    <ToggleMenuFlyoutItem Text="Тёмная"
+                                      IsChecked="{x:Bind ViewModel.IsDarkThemeSelected, Mode=OneWay}"
+                                      Command="{x:Bind ViewModel.UseDarkThemeCommand}"/>
+                                </MenuFlyoutSubItem>
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
@@ -160,8 +153,10 @@
                             Content="Справка">
                         <Button.Flyout>
                             <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                                <MenuFlyoutItem Text="О программе" Click="MenuAbout_Click"/>
-                                <MenuFlyoutItem Text="Горячие клавиши" Click="MenuShortcuts_Click"/>
+                                <MenuFlyoutItem Text="О программе"
+                                                Command="{x:Bind ViewModel.ShowAboutCommand}"/>
+                                <MenuFlyoutItem Text="Горячие клавиши"
+                                                Command="{x:Bind ViewModel.ShowShortcutsCommand}"/>
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
@@ -170,60 +165,67 @@
                 <Button Grid.Column="1"
                         x:Name="RegexPanelButton"
                         Style="{StaticResource FlatIconButtonStyle}"
-                        Click="RegexPanelButton_Click"
+                        Command="{x:Bind ViewModel.OpenRegexPanelCommand}"
                         ToolTipService.ToolTip="Regex поиск и замена">
                     <SymbolIcon Symbol="Find"/>
                 </Button>
             </Grid>
         </Border>
 
-        <!-- Editor -->
-        <Grid Grid.Row="2" Background="#1F1F1F">
-            <Grid.Resources>
-                <SolidColorBrush x:Key="TextControlBackground" Color="#1F1F1F"/>
-                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#1F1F1F"/>
-                <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#1F1F1F"/>
-
-                <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent"/>
-                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent"/>
-                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent"/>
-
-                <Thickness x:Key="TextControlBorderThemeThickness">0</Thickness>
-                <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
-            </Grid.Resources>
-
+        <Grid Grid.Row="2"
+              Style="{StaticResource EditorHostGridStyle}">
             <RichEditBox x:Name="EditorBox"
-                         Margin="0"
-                         Padding="12,10,12,10"
-                         Background="#1F1F1F"
-                         Foreground="#F5F5F5"
-                         BorderThickness="0"
-                         CornerRadius="0"
-                         FontSize="18"
-                         FontFamily="Consolas"
-                         AcceptsReturn="True"
-                         TextWrapping="NoWrap"
-                         UseSystemFocusVisuals="False"
-                         FocusVisualPrimaryThickness="0"
-                         FocusVisualSecondaryThickness="0"
-                         SelectionHighlightColor="#6680A8FF"
-                         VerticalAlignment="Stretch"
-                         HorizontalAlignment="Stretch"
-                         TextChanged="EditorBox_TextChanged"/>
+             Style="{StaticResource EditorRichEditBoxStyle}"
+             TextChanged="EditorBox_TextChanged">
 
-            <!-- Regex panel -->
+                <RichEditBox.Resources>
+                    <ResourceDictionary>
+                        <ResourceDictionary.ThemeDictionaries>
+
+                            <ResourceDictionary x:Key="Dark">
+                                <SolidColorBrush x:Key="TextControlBackground" Color="#1F1F1F"/>
+                                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#1F1F1F"/>
+                                <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#1F1F1F"/>
+
+                                <SolidColorBrush x:Key="TextControlForeground" Color="#F5F5F5"/>
+                                <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#F5F5F5"/>
+                                <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#F5F5F5"/>
+
+                                <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent"/>
+                                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent"/>
+                                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent"/>
+                            </ResourceDictionary>
+
+                            <ResourceDictionary x:Key="Light">
+                                <SolidColorBrush x:Key="TextControlBackground" Color="#FFFFFF"/>
+                                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#FFFFFF"/>
+                                <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#FFFFFF"/>
+
+                                <SolidColorBrush x:Key="TextControlForeground" Color="#111111"/>
+                                <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#111111"/>
+                                <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#111111"/>
+
+                                <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent"/>
+                                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent"/>
+                                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent"/>
+                            </ResourceDictionary>
+
+                        </ResourceDictionary.ThemeDictionaries>
+                    </ResourceDictionary>
+                </RichEditBox.Resources>
+            </RichEditBox>
+
             <Border x:Name="RegexPanel"
-                    Width="430"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Top"
-                    Margin="0,14,14,0"
-                    Padding="14"
-                    Background="#CC2B2B2B"
-                    BorderBrush="#3B3B3B"
-                    BorderThickness="1"
-                    CornerRadius="10"
-                    Visibility="Collapsed">
+                    Style="{StaticResource RegexPanelBorderStyle}"
+                    Visibility="Collapsed"
+                    Opacity="0"
+                    RenderTransformOrigin="0.5,0.5">
 
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="RegexPanelTranslateTransform"
+                        X="24"/>
+                </Border.RenderTransform>
+                
                 <StackPanel Spacing="12">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -232,95 +234,93 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Text="Поиск и замена по регулярным выражениям"
-                                   Foreground="#F3F3F3"
-                                   FontSize="16"
-                                   FontWeight="SemiBold"
-                                   TextWrapping="Wrap"/>
+                                   Style="{StaticResource RegexPanelTitleTextStyle}"/>
 
                         <Button Grid.Column="1"
                                 Style="{StaticResource FlatIconButtonStyle}"
-                                Click="CloseRegexPanelButton_Click">
+                                Command="{x:Bind ViewModel.CloseRegexPanelCommand}">
                             <SymbolIcon Symbol="Cancel"/>
                         </Button>
                     </Grid>
 
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Шаблон" Foreground="#CFCFCF"/>
+                        <TextBlock Text="Шаблон"
+                                   Style="{StaticResource LabelTextStyle}"/>
                         <TextBox x:Name="PatternTextBox"
+                                 Style="{StaticResource RegexTextBoxStyle}"
+                                 Text="{Binding Pattern, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  PlaceholderText="Например: [A-Za-z]+1"/>
+                        <TextBlock x:Name="RegexErrorTextBlock"
+                                   Style="{StaticResource RegexErrorTextStyle}"
+                                   Text="{x:Bind ViewModel.RegexErrorText, Mode=OneWay}"
+                                   Visibility="Collapsed"/>
                     </StackPanel>
 
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Замена" Foreground="#CFCFCF"/>
+                        <TextBlock Text="Замена"
+                                   Style="{StaticResource LabelTextStyle}"/>
                         <TextBox x:Name="ReplacementTextBox"
+                                 Style="{StaticResource RegexTextBoxStyle}"
+                                 Text="{Binding Replacement, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  PlaceholderText="Например: $0_NEW"/>
                     </StackPanel>
 
                     <TextBlock Text="Поддерживаются группы захвата: $1, $2 и т.д."
-                               Foreground="#AFAFAF"
-                               TextWrapping="Wrap"/>
+                               Style="{StaticResource HintTextStyle}"/>
 
                     <StackPanel Orientation="Vertical" Spacing="8">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button x:Name="FindButton"
                                     Style="{StaticResource RegexActionButtonStyle}"
                                     Content="Найти"
-                                    Click="FindButton_Click"/>
+                                    Command="{x:Bind ViewModel.FindCommand}"/>
 
                             <Button x:Name="PrevButton"
                                     Style="{StaticResource RegexActionButtonStyle}"
                                     Content="Назад"
-                                    Click="PrevButton_Click"/>
+                                    Command="{x:Bind ViewModel.PreviousMatchCommand}"/>
 
                             <Button x:Name="NextButton"
                                     Style="{StaticResource RegexActionButtonStyle}"
                                     Content="Далее"
-                                    Click="NextButton_Click"/>
+                                    Command="{x:Bind ViewModel.NextMatchCommand}"/>
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button x:Name="ReplaceCurrentButton"
                                     Style="{StaticResource RegexActionButtonStyle}"
                                     Content="Заменить"
-                                    Click="ReplaceCurrentButton_Click"/>
+                                    Command="{x:Bind ViewModel.ReplaceCurrentCommand}"/>
 
                             <Button x:Name="ReplaceAllButton"
                                     Style="{StaticResource RegexActionButtonStyle}"
                                     Content="Заменить всё"
-                                    Click="ReplaceAllButton_Click"/>
+                                    Command="{x:Bind ViewModel.ReplaceAllCommand}"/>
                         </StackPanel>
                     </StackPanel>
 
-                    <Border Padding="10"
-                            CornerRadius="8"
-                            Background="#88242424"
-                            BorderBrush="#383838"
-                            BorderThickness="1">
+                    <Border Style="{StaticResource RegexInfoBorderStyle}">
                         <StackPanel Spacing="6">
                             <TextBlock x:Name="MatchesCountTextBlock"
-                                       Text="Найдено: 0"
-                                       Foreground="#F3F3F3"/>
+                                       Text="{Binding MatchesCountText}"
+                                       Style="{StaticResource CounterTextStyle}"/>
 
                             <TextBlock x:Name="CurrentMatchTextBlock"
-                                       Text="Текущее: 0/0"
-                                       Foreground="#F3F3F3"/>
+                                       Text="{Binding CurrentMatchText}"
+                                       Style="{StaticResource CounterTextStyle}"/>
 
                             <TextBlock x:Name="ReplacedCountTextBlock"
-                                       Text="Заменено: 0"
-                                       Foreground="#F3F3F3"/>
+                                       Text="{Binding ReplacedCountText}"
+                                       Style="{StaticResource CounterTextStyle}"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
             </Border>
         </Grid>
 
-        <!-- Status bar -->
         <Border x:Name="StatusBarBorder"
                 Grid.Row="3"
-                MinHeight="30"
-                Background="Transparent"
-                BorderBrush="#20FFFFFF"
-                BorderThickness="0,1,0,0">
+                Style="{StaticResource StatusBarBorderStyle}">
             <Grid Padding="10,4,10,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -330,23 +330,20 @@
 
                 <TextBlock x:Name="LinesCountTextBlock"
                            Grid.Column="0"
-                           Text="Строк: 1"
-                           Foreground="#F3F3F3"
-                           VerticalAlignment="Center"/>
+                           Text="{Binding LinesCountText}"
+                           Style="{StaticResource StatusTextStyle}"/>
 
                 <TextBlock x:Name="CharsCountTextBlock"
                            Grid.Column="1"
                            Margin="14,0,0,0"
-                           Text="Символов: 0"
-                           Foreground="#F3F3F3"
-                           VerticalAlignment="Center"/>
+                           Text="{Binding CharactersCountText}"
+                           Style="{StaticResource StatusTextStyle}"/>
 
                 <TextBlock x:Name="StatusTextBlock"
                            Grid.Column="2"
-                           Text="Готово"
-                           Foreground="#F3F3F3"
+                           Text="{Binding StatusText}"
                            HorizontalAlignment="Right"
-                           VerticalAlignment="Center"/>
+                           Style="{StaticResource StatusTextStyle}"/>
             </Grid>
         </Border>
     </Grid>

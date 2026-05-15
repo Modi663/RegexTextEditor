@@ -1,4 +1,5 @@
 ﻿using RegexTextEditor.Models;
+using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
@@ -50,6 +51,25 @@ namespace RegexTextEditor.Services
             string replacedCurrent = match.Result(replacement);
 
             return before + replacedCurrent + after;
+        }
+
+        public bool TryValidatePattern(string pattern, out string errorMessage)
+        {
+            errorMessage = string.Empty;
+
+            if (string.IsNullOrEmpty(pattern))
+                return true;
+
+            try
+            {
+                _ = new Regex(pattern);
+                return true;
+            }
+            catch (ArgumentException exception)
+            {
+                errorMessage = exception.Message;
+                return false;
+            }
         }
     }
 }

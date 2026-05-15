@@ -1,0 +1,45 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build folders
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+ARM/
+ARM64/
+
+# Publish / packaging
+publish/
+AppPackages/
+BundleArtifacts/
+TestResults/
+
+# MSIX / app package signing
+*.pfx
+Package.StoreAssociation.xml
+
+# NuGet
+*.nupkg
+*.snupkg
+
+# Logs
+*.log
+
+# Rider / ReSharper
+_ReSharper*/
+*.DotSettings.user
+
+# JetBrains Rider
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
