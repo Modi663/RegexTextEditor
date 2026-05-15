@@ -1,5 +1,7 @@
 ﻿using Microsoft.UI.Text;
 using Microsoft.UI.Xaml.Controls;
+using RegexTextEditor.Models;
+using System.Linq;
 
 namespace RegexTextEditor.Services
 {
@@ -7,12 +9,9 @@ namespace RegexTextEditor.Services
     {
         public string GetText(RichEditBox editor)
         {
-            editor.Document.GetText(TextGetOptions.None, out string text);
+            editor.Document.GetText(TextGetOptions.UseCrlf, out string text);
 
-            if (text.EndsWith("\r"))
-                text = text[..^1];
-
-            return text;
+            return NormalizeRichEditBoxText(text);
         }
 
         public void SetText(RichEditBox editor, string text)
@@ -20,14 +19,44 @@ namespace RegexTextEditor.Services
             editor.Document.SetText(TextSetOptions.None, text);
         }
 
-        public (int Lines, int Chars) GetStatistics(RichEditBox editor)
+        public EditorStatistics GetStatistics(RichEditBox editor)
         {
             string text = GetText(editor);
 
-            int charsCount = text.Length;
-            int linesCount = string.IsNullOrEmpty(text) ? 1 : text.Split('\n').Length;
+            int linesCount = CountLines(text);
+            int charactersCount = CountVisibleCharacters(text);
 
-            return (linesCount, charsCount);
+            return new EditorStatistics(linesCount, charactersCount);
+        }
+
+        private static string NormalizeRichEditBoxText(string text)
+        {
+            if (text.EndsWith("\r"))
+                text = text[..^1];
+
+            return text;
+        }
+
+        private static int CountLines(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return 1;
+
+            string normalizedText = NormalizeLineEndings(text);
+
+            return normalizedText.Count(character => character == '\n') + 1;
+        }
+
+        private static int CountVisibleCharacters(string text)
+        {
+            return text.Count(character => character != '\r' && character != '\n');
+        }
+
+        private static string NormalizeLineEndings(string text)
+        {
+            return text
+                .Replace("\r\n", "\n")
+                .Replace('\r', '\n');
         }
     }
 }

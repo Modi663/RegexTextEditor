@@ -1,0 +1,29 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Style x:Key="EditorHostGridStyle" TargetType="Grid">
+        <Setter Property="Background" Value="{ThemeResource AppEditorBackgroundBrush}"/>
+    </Style>
+
+    <Style x:Key="EditorRichEditBoxStyle" TargetType="RichEditBox">
+        <Setter Property="Margin" Value="0"/>
+        <Setter Property="Padding" Value="12,10,12,10"/>
+        <Setter Property="Background" Value="{ThemeResource AppEditorBackgroundBrush}"/>
+        <Setter Property="Foreground" Value="{ThemeResource AppTextEditorBrush}"/>
+        <Setter Property="BorderBrush" Value="{ThemeResource AppTransparentBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="CornerRadius" Value="0"/>
+        <Setter Property="FontSize" Value="18"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="AcceptsReturn" Value="True"/>
+        <Setter Property="TextWrapping" Value="NoWrap"/>
+        <Setter Property="UseSystemFocusVisuals" Value="False"/>
+        <Setter Property="FocusVisualPrimaryThickness" Value="0"/>
+        <Setter Property="FocusVisualSecondaryThickness" Value="0"/>
+		<Setter Property="SelectionHighlightColor" Value="{ThemeResource AppSelectionHighlightBrush}"/>
+        <Setter Property="VerticalAlignment" Value="Stretch"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+    </Style>
+
+</ResourceDictionary>

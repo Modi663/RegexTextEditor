@@ -1,13 +1,14 @@
 using Microsoft.UI;
-using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using RegexTextEditor.Models;
 using RegexTextEditor.Services;
+using RegexTextEditor.ViewModels;
 using System;
-using System.Collections.Generic;
-using System.Text.RegularExpressions;
+using System.ComponentModel;
 using System.Threading.Tasks;
 using Windows.Storage;
 
@@ -15,29 +16,47 @@ namespace RegexTextEditor
 {
     public sealed partial class MainWindow : Window
     {
-        private RegexService RegexService { get; } = new();
-        private FileService FileService { get; } = new();
-        private FilePickerService FilePickerService { get; } = new();
-        private EditorDocumentService DocumentService { get; } = new();
-        private WindowAppearanceService AppearanceService { get; } = new();
+        public MainWindowViewModel ViewModel { get; } = new();
 
-        private EditorFileState FileState { get; } = new();
+        private readonly FileService FileService = new();
+        private readonly FilePickerService FilePickerService = new();
+        private readonly EditorDocumentService DocumentService = new();
+        private readonly WindowAppearanceService AppearanceService = new();
+        private readonly DialogService DialogService = new();
 
-        private List<SearchResult> Matches { get; set; } = new();
-        private bool IsDirty { get; set; }
-        private bool SuppressTextChanged { get; set; }
-        private int CurrentMatchIndex { get; set; } = -1;
-        private int ReplacedCount { get; set; }
-        private bool WordWrapEnabled { get; set; }
-        private bool AllowWindowClose { get; set; }
-        private bool IsCloseConfirmationInProgress { get; set; }
+        private bool SuppressTextChanged;
+        private bool AllowWindowClose;
+        private bool IsCloseConfirmationInProgress;
+        private Storyboard? _regexPanelStoryboard;
+        private bool? _lastRegexPanelTargetVisible;
 
         private static Windows.UI.Color AllMatchesColor => ColorHelper.FromArgb(90, 70, 110, 160);
         private static Windows.UI.Color CurrentMatchColor => ColorHelper.FromArgb(190, 215, 160, 55);
 
         public MainWindow()
         {
+            ViewModel.ConfigureCommands(
+                CreateNewDocumentAsync,
+                OpenDocumentCommandAsync,
+                SaveToCurrentFileAsync,
+                SaveAsFileAsync,
+                ExitApplicationAsync,
+                ExecuteToggleRegexPanel,
+                ExecuteCloseRegexPanel,
+                ExecuteFind,
+                ExecuteNextMatch,
+                ExecutePreviousMatch,
+                ExecuteReplaceCurrent,
+                ExecuteReplaceAll,
+                ExecuteClearDocument,
+                ShowAboutDialogAsync,
+                ShowShortcutsDialogAsync);
+
             InitializeComponent();
+
+            RootGrid.DataContext = ViewModel;
+            RootGrid.ActualThemeChanged += RootGrid_ActualThemeChanged;
+            ViewModel.PropertyChanged += ViewModel_PropertyChanged;
 
             AppearanceService.SetupMica(this);
             AppearanceService.SetupCustomTitleBar(
@@ -47,19 +66,206 @@ namespace RegexTextEditor
                 LeftInsetColumn,
                 RightInsetColumn);
 
+            WindowMinSizeHook.Attach(this, 900, 580);
+
             AppWindow.Closing += AppWindow_Closing;
 
             LoadDemoText();
-            UpdateDocumentTitle();
-            UpdateEditorStatistics();
-            UpdateCounters();
+            ApplyViewModelVisualState();
         }
 
-        private enum UnsavedChangesDecision
+        private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            Save,
-            Discard,
-            Cancel
+            if (e.PropertyName == nameof(MainWindowViewModel.WindowTitle) ||
+                e.PropertyName == nameof(MainWindowViewModel.IsRegexPanelVisible) ||
+                e.PropertyName == nameof(MainWindowViewModel.IsStatusBarVisible) ||
+                e.PropertyName == nameof(MainWindowViewModel.WordWrapEnabled) ||
+                e.PropertyName == nameof(MainWindowViewModel.ThemeMode) ||
+                e.PropertyName == nameof(MainWindowViewModel.HasRegexError))
+            {
+                ApplyViewModelVisualState();
+            }
+        }
+
+        private void ApplyViewModelVisualState()
+        {
+            ApplyTheme();
+
+            Title = ViewModel.WindowTitle;
+
+            ApplyRegexPanelVisualState();
+
+            StatusBarBorder.Visibility = ViewModel.IsStatusBarVisible
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+            EditorBox.TextWrapping = ViewModel.WordWrapEnabled
+                ? TextWrapping.Wrap
+                : TextWrapping.NoWrap;
+
+            ToggleStatusBarMenuItem.IsChecked = ViewModel.IsStatusBarVisible;
+            ToggleWordWrapMenuItem.IsChecked = ViewModel.WordWrapEnabled;
+
+            ApplyRegexErrorVisualState();
+        }
+
+        private void ApplyRegexPanelVisualState()
+        {
+            bool targetVisible = ViewModel.IsRegexPanelVisible;
+
+            if (_lastRegexPanelTargetVisible is null)
+            {
+                _lastRegexPanelTargetVisible = targetVisible;
+
+                RegexPanel.Visibility = targetVisible
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+
+                RegexPanel.Opacity = targetVisible ? 1 : 0;
+                RegexPanelTranslateTransform.X = targetVisible ? 0 : 24;
+
+                return;
+            }
+
+            if (_lastRegexPanelTargetVisible == targetVisible)
+                return;
+
+            _lastRegexPanelTargetVisible = targetVisible;
+
+            if (targetVisible)
+                ShowRegexPanelAnimated();
+            else
+                HideRegexPanelAnimated();
+        }
+
+        private void ShowRegexPanelAnimated()
+        {
+            _regexPanelStoryboard?.Stop();
+
+            RegexPanel.Visibility = Visibility.Visible;
+            RegexPanel.Opacity = 0;
+            RegexPanelTranslateTransform.X = 24;
+
+            _regexPanelStoryboard = CreateRegexPanelStoryboard(
+                targetOpacity: 1,
+                targetX: 0,
+                durationMilliseconds: 180);
+
+            _regexPanelStoryboard.Begin();
+        }
+
+        private void HideRegexPanelAnimated()
+        {
+            _regexPanelStoryboard?.Stop();
+
+            if (RegexPanel.Visibility != Visibility.Visible)
+            {
+                RegexPanel.Opacity = 0;
+                RegexPanelTranslateTransform.X = 24;
+                RegexPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            _regexPanelStoryboard = CreateRegexPanelStoryboard(
+                targetOpacity: 0,
+                targetX: 24,
+                durationMilliseconds: 140);
+
+            _regexPanelStoryboard.Completed += (_, _) =>
+            {
+                if (!ViewModel.IsRegexPanelVisible)
+                    RegexPanel.Visibility = Visibility.Collapsed;
+            };
+
+            _regexPanelStoryboard.Begin();
+        }
+
+        private Storyboard CreateRegexPanelStoryboard(
+            double targetOpacity,
+            double targetX,
+            int durationMilliseconds)
+        {
+            Storyboard storyboard = new();
+
+            Duration duration = new(TimeSpan.FromMilliseconds(durationMilliseconds));
+
+            CubicEase easing = new()
+            {
+                EasingMode = EasingMode.EaseOut
+            };
+
+            DoubleAnimation opacityAnimation = new()
+            {
+                To = targetOpacity,
+                Duration = duration,
+                EasingFunction = easing
+            };
+
+            Storyboard.SetTarget(opacityAnimation, RegexPanel);
+            Storyboard.SetTargetProperty(opacityAnimation, "Opacity");
+
+            DoubleAnimation translateAnimation = new()
+            {
+                To = targetX,
+                Duration = duration,
+                EasingFunction = easing
+            };
+
+            Storyboard.SetTarget(translateAnimation, RegexPanelTranslateTransform);
+            Storyboard.SetTargetProperty(translateAnimation, "X");
+
+            storyboard.Children.Add(opacityAnimation);
+            storyboard.Children.Add(translateAnimation);
+
+            return storyboard;
+        }
+
+        private void ApplyRegexErrorVisualState()
+        {
+            RegexErrorTextBlock.Visibility = ViewModel.HasRegexError
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+            if (ViewModel.HasRegexError)
+            {
+                PatternTextBox.BorderBrush = GetBrushResource("AppRegexErrorBorderBrush");
+                PatternTextBox.BorderThickness = new Thickness(1.5);
+                return;
+            }
+
+            PatternTextBox.ClearValue(Control.BorderBrushProperty);
+            PatternTextBox.ClearValue(Control.BorderThicknessProperty);
+        }
+
+        private Brush GetBrushResource(string resourceKey)
+        {
+            if (Application.Current.Resources.TryGetValue(resourceKey, out object value) &&
+                value is Brush brush)
+            {
+                return brush;
+            }
+
+            return PatternTextBox.BorderBrush;
+        }
+
+        private void ApplyTheme()
+        {
+            ElementTheme requestedTheme = ViewModel.ThemeMode switch
+            {
+                AppThemeMode.Light => ElementTheme.Light,
+                AppThemeMode.Dark => ElementTheme.Dark,
+                _ => ElementTheme.Default
+            };
+
+            if (RootGrid.RequestedTheme != requestedTheme)
+                RootGrid.RequestedTheme = requestedTheme;
+
+            AppearanceService.ApplyTitleBarButtonTheme(RootGrid.ActualTheme);
+        }
+
+        private void RootGrid_ActualThemeChanged(FrameworkElement sender, object args)
+        {
+            AppearanceService.ApplyTitleBarButtonTheme(sender.ActualTheme);
         }
 
         private void LoadDemoText()
@@ -75,7 +281,8 @@ test@test.com
 02.03.2026";
 
             SetEditorText(demoText);
-            MarkDocumentSaved();
+            ViewModel.MarkDocumentSaved();
+            ViewModel.SetStatus("Готово");
         }
 
         private string GetEditorText()
@@ -99,79 +306,18 @@ test@test.com
             UpdateEditorStatistics();
         }
 
-        private void UpdateDocumentTitle()
-        {
-            string dirtyMark = IsDirty ? "*" : string.Empty;
-            string titleText = $"{dirtyMark}{FileState.DocumentName}";
-
-            DocumentTitleTextBlock.Text = titleText;
-            Title = $"{titleText} - Regex Text Editor";
-        }
-
         private void UpdateEditorStatistics()
         {
-            var (lines, chars) = DocumentService.GetStatistics(EditorBox);
-
-            LinesCountTextBlock.Text = $"Строк: {lines}";
-            CharsCountTextBlock.Text = $"Символов: {chars}";
-        }
-
-        private void UpdateCounters()
-        {
-            MatchesCountTextBlock.Text = $"Найдено: {Matches.Count}";
-
-            if (Matches.Count == 0 || CurrentMatchIndex < 0)
-                CurrentMatchTextBlock.Text = "Текущее: 0/0";
-            else
-                CurrentMatchTextBlock.Text = $"Текущее: {CurrentMatchIndex + 1}/{Matches.Count}";
-
-            ReplacedCountTextBlock.Text = $"Заменено: {ReplacedCount}";
-        }
-
-        private void MarkDocumentDirty()
-        {
-            if (IsDirty)
-                return;
-
-            IsDirty = true;
-            UpdateDocumentTitle();
-        }
-
-        private void MarkDocumentSaved()
-        {
-            IsDirty = false;
-            UpdateDocumentTitle();
-        }
-
-        private async Task<UnsavedChangesDecision> AskUnsavedChangesAsync()
-        {
-            if (!IsDirty)
-                return UnsavedChangesDecision.Discard;
-
-            ContentDialog dialog = new()
-            {
-                Title = "Есть несохранённые изменения",
-                Content = "Сохранить изменения перед продолжением?",
-                PrimaryButtonText = "Сохранить",
-                SecondaryButtonText = "Не сохранять",
-                CloseButtonText = "Отмена",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = AppTitleBar.XamlRoot
-            };
-
-            ContentDialogResult result = await dialog.ShowAsync();
-
-            return result switch
-            {
-                ContentDialogResult.Primary => UnsavedChangesDecision.Save,
-                ContentDialogResult.Secondary => UnsavedChangesDecision.Discard,
-                _ => UnsavedChangesDecision.Cancel
-            };
+            EditorStatistics statistics = DocumentService.GetStatistics(EditorBox);
+            ViewModel.UpdateStatistics(statistics);
         }
 
         private async Task<bool> ConfirmCanContinueAsync()
         {
-            UnsavedChangesDecision decision = await AskUnsavedChangesAsync();
+            if (!ViewModel.IsDirty)
+                return true;
+
+            UnsavedChangesDecision decision = await DialogService.AskUnsavedChangesAsync(AppTitleBar.XamlRoot);
 
             if (decision == UnsavedChangesDecision.Cancel)
                 return false;
@@ -179,7 +325,7 @@ test@test.com
             if (decision == UnsavedChangesDecision.Save)
             {
                 await SaveToCurrentFileAsync();
-                return !IsDirty;
+                return !ViewModel.IsDirty;
             }
 
             return true;
@@ -195,58 +341,172 @@ test@test.com
         {
             ClearAllHighlights();
 
-            if (Matches.Count == 0)
+            if (ViewModel.MatchesCount == 0)
                 return;
 
-            foreach (SearchResult match in Matches)
+            string editorText = GetEditorText();
+
+            foreach (SearchResult match in ViewModel.Matches)
             {
-                var range = EditorBox.Document.GetRange(match.Start, match.Start + match.Length);
+                var (start, end) = ConvertTextMatchToRichEditRange(editorText, match);
+
+                if (start == end)
+                    continue;
+
+                var range = EditorBox.Document.GetRange(start, end);
                 range.CharacterFormat.BackgroundColor = AllMatchesColor;
             }
 
-            if (CurrentMatchIndex >= 0 && CurrentMatchIndex < Matches.Count)
+            if (ViewModel.CurrentMatchIndex >= 0 && ViewModel.CurrentMatchIndex < ViewModel.Matches.Count)
             {
-                SearchResult current = Matches[CurrentMatchIndex];
-                var currentRange = EditorBox.Document.GetRange(current.Start, current.Start + current.Length);
+                SearchResult current = ViewModel.Matches[ViewModel.CurrentMatchIndex];
+                var (start, end) = ConvertTextMatchToRichEditRange(editorText, current);
+
+                if (start == end)
+                    return;
+
+                var currentRange = EditorBox.Document.GetRange(start, end);
 
                 currentRange.CharacterFormat.BackgroundColor = CurrentMatchColor;
-                EditorBox.Document.Selection.SetRange(current.Start, current.Start + current.Length);
+                EditorBox.Document.Selection.SetRange(start, end);
             }
+        }
+
+        private static (int Start, int End) ConvertTextMatchToRichEditRange(
+    string text,
+    SearchResult match)
+        {
+            int textStart = Math.Clamp(match.Start, 0, text.Length);
+            int textEnd = Math.Clamp(match.Start + match.Length, textStart, text.Length);
+
+            int richEditStart = ConvertTextIndexToRichEditIndex(text, textStart);
+            int richEditEnd = ConvertTextIndexToRichEditIndex(text, textEnd);
+
+            return (richEditStart, richEditEnd);
+        }
+
+        private static int ConvertTextIndexToRichEditIndex(string text, int textIndex)
+        {
+            int richEditIndex = textIndex;
+
+            for (int i = 0; i < textIndex; i++)
+            {
+                if (text[i] == '\r')
+                    richEditIndex--;
+            }
+
+            return richEditIndex;
         }
 
         private void ResetRegexState(bool closePanel = true)
         {
-            Matches.Clear();
-            CurrentMatchIndex = -1;
-            ReplacedCount = 0;
-
-            PatternTextBox.Text = string.Empty;
-            ReplacementTextBox.Text = string.Empty;
-
+            ViewModel.ResetRegexState(clearInputs: true);
             ClearAllHighlights();
 
             if (closePanel)
-                RegexPanel.Visibility = Visibility.Collapsed;
-
-            UpdateCounters();
+                ViewModel.CloseRegexPanel();
         }
 
-        private void OpenRegexPanel()
+        private void ExecuteToggleRegexPanel()
         {
-            RegexPanel.Visibility = Visibility.Visible;
-            StatusTextBlock.Text = "Панель regex открыта";
+            if (ViewModel.IsRegexPanelVisible)
+            {
+                ExecuteCloseRegexPanel();
+                return;
+            }
+
+            ViewModel.OpenRegexPanel();
+            PatternTextBox.Focus(FocusState.Programmatic);
         }
 
-        private void CloseRegexPanel()
+        private void ExecuteCloseRegexPanel()
         {
-            Matches.Clear();
-            CurrentMatchIndex = -1;
-            ReplacedCount = 0;
-
+            ViewModel.CloseRegexPanel();
             ClearAllHighlights();
-            UpdateCounters();
-            RegexPanel.Visibility = Visibility.Collapsed;
-            StatusTextBlock.Text = "Панель regex закрыта";
+        }
+
+        private void ExecuteFind()
+        {
+            try
+            {
+                string text = GetEditorText();
+
+                ViewModel.FindMatches(text);
+
+                HighlightMatches();
+                UpdateEditorStatistics();
+            }
+            catch (Exception ex)
+            {
+                ViewModel.ClearRegexResults(resetReplacedCount: false);
+                ClearAllHighlights();
+                ViewModel.SetStatus($"Ошибка regex: {ex.Message}");
+            }
+        }
+
+        private void ExecuteNextMatch()
+        {
+            if (!ViewModel.MoveNextMatch())
+                return;
+
+            HighlightMatches();
+        }
+
+        private void ExecutePreviousMatch()
+        {
+            if (!ViewModel.MovePreviousMatch())
+                return;
+
+            HighlightMatches();
+        }
+
+        private void ExecuteReplaceCurrent()
+        {
+            try
+            {
+                string text = GetEditorText();
+
+                if (!ViewModel.TryReplaceCurrent(text, out string newText))
+                    return;
+
+                SetEditorText(newText);
+                ViewModel.MarkDocumentDirty();
+
+                HighlightMatches();
+            }
+            catch (Exception ex)
+            {
+                ViewModel.SetStatus($"Ошибка замены: {ex.Message}");
+            }
+        }
+
+        private void ExecuteReplaceAll()
+        {
+            try
+            {
+                string text = GetEditorText();
+
+                bool replaced = ViewModel.TryReplaceAll(text, out string newText);
+
+                SetEditorText(newText);
+
+                if (replaced)
+                    ViewModel.MarkDocumentDirty();
+
+                HighlightMatches();
+            }
+            catch (Exception ex)
+            {
+                ViewModel.SetStatus($"Ошибка замены: {ex.Message}");
+            }
+        }
+
+        private void ExecuteClearDocument()
+        {
+            SetEditorText(string.Empty);
+            ResetRegexState(closePanel: false);
+            ViewModel.MarkDocumentDirty();
+            ViewModel.SetStatus("Документ очищен");
         }
 
         private async Task OpenFileAsync()
@@ -257,7 +517,7 @@ test@test.com
 
                 if (file is null)
                 {
-                    StatusTextBlock.Text = "Открытие файла отменено";
+                    ViewModel.SetStatus("Открытие файла отменено");
                     return;
                 }
 
@@ -265,19 +525,15 @@ test@test.com
 
                 SetEditorText(text);
 
-                FileState.File = file;
-                FileState.FilePath = file.Path;
-                FileState.DocumentName = file.Name;
-
-                UpdateDocumentTitle();
+                ViewModel.SetFile(file);
                 ResetRegexState();
-                MarkDocumentSaved();
+                ViewModel.MarkDocumentSaved();
 
-                StatusTextBlock.Text = $"Открыт файл: {file.Name}";
+                ViewModel.SetStatus($"Открыт файл: {file.Name}");
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = $"Ошибка открытия файла: {ex.Message}";
+                ViewModel.SetStatus($"Ошибка открытия файла: {ex.Message}");
             }
         }
 
@@ -285,26 +541,25 @@ test@test.com
         {
             try
             {
-                if (FileState.File is null)
+                StorageFile? currentFile = ViewModel.CurrentFile;
+
+                if (currentFile is null)
                 {
                     await SaveAsFileAsync();
                     return;
                 }
 
                 string text = GetEditorText();
-                await FileService.WriteTextAsync(FileState.File, text);
+                await FileService.WriteTextAsync(currentFile, text);
 
-                FileState.FilePath = FileState.File.Path;
-                FileState.DocumentName = FileState.File.Name;
+                ViewModel.SetFile(currentFile);
+                ViewModel.MarkDocumentSaved();
 
-                UpdateDocumentTitle();
-                MarkDocumentSaved();
-
-                StatusTextBlock.Text = $"Файл сохранён: {FileState.File.Name}";
+                ViewModel.SetStatus($"Файл сохранён: {currentFile.Name}");
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = $"Ошибка сохранения файла: {ex.Message}";
+                ViewModel.SetStatus($"Ошибка сохранения файла: {ex.Message}");
             }
         }
 
@@ -312,73 +567,41 @@ test@test.com
         {
             try
             {
-                StorageFile? file = await FilePickerService.PickSaveFileAsync(this, FileState.DocumentName);
+                StorageFile? file = await FilePickerService.PickSaveFileAsync(this, ViewModel.DocumentName);
 
                 if (file is null)
                 {
-                    StatusTextBlock.Text = "Сохранение отменено";
+                    ViewModel.SetStatus("Сохранение отменено");
                     return;
                 }
 
                 string text = GetEditorText();
                 await FileService.WriteTextAsync(file, text);
 
-                FileState.File = file;
-                FileState.FilePath = file.Path;
-                FileState.DocumentName = file.Name;
+                ViewModel.SetFile(file);
+                ViewModel.MarkDocumentSaved();
 
-                UpdateDocumentTitle();
-                MarkDocumentSaved();
-
-                StatusTextBlock.Text = $"Файл сохранён: {file.Name}";
+                ViewModel.SetStatus($"Файл сохранён: {file.Name}");
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = $"Ошибка сохранения файла: {ex.Message}";
+                ViewModel.SetStatus($"Ошибка сохранения файла: {ex.Message}");
             }
         }
 
         private async Task ShowAboutDialogAsync()
         {
-            ContentDialog dialog = new()
-            {
-                Title = "О программе",
-                Content =
-@"Regex Text Editor
-Версия: Beta 0.1
-
-Текстовый редактор с поддержкой поиска и замены по регулярным выражениям.
-Проект на WinUI 3 / C#.",
-                CloseButtonText = "Закрыть",
-                XamlRoot = AppTitleBar.XamlRoot
-            };
-
-            await dialog.ShowAsync();
+            await DialogService.ShowAboutDialogAsync(AppTitleBar.XamlRoot);
         }
 
         private async Task ShowShortcutsDialogAsync()
         {
-            ContentDialog dialog = new()
-            {
-                Title = "Горячие клавиши",
-                Content =
-@"Ctrl+N  — новый документ
-Ctrl+O  — открыть
-Ctrl+S  — сохранить
-Ctrl+Shift+S — сохранить как
-Ctrl+F  — открыть regex-панель
-Ctrl+H  — открыть regex-панель
-F3      — следующее совпадение
-Shift+F3 — предыдущее совпадение
-F1      — справка",
-                CloseButtonText = "Закрыть",
-                XamlRoot = AppTitleBar.XamlRoot
-            };
-
-            await dialog.ShowAsync();
+            await DialogService.ShowShortcutsDialogAsync(AppTitleBar.XamlRoot);
         }
 
-        private async void AppWindow_Closing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
+        private async void AppWindow_Closing(
+            Microsoft.UI.Windowing.AppWindow sender,
+            Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
         {
             if (AllowWindowClose || IsCloseConfirmationInProgress)
                 return;
@@ -402,163 +625,26 @@ F1      — справка",
             }
         }
 
-        private void RegexPanelButton_Click(object sender, RoutedEventArgs e)
-        {
-            OpenRegexPanel();
-        }
-
-        private void CloseRegexPanelButton_Click(object sender, RoutedEventArgs e)
-        {
-            CloseRegexPanel();
-        }
-
-        private void FindButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                string text = GetEditorText();
-                string pattern = PatternTextBox.Text;
-
-                Matches = RegexService.FindMatches(text, pattern);
-                CurrentMatchIndex = Matches.Count > 0 ? 0 : -1;
-                ReplacedCount = 0;
-
-                UpdateCounters();
-                HighlightMatches();
-                UpdateEditorStatistics();
-
-                StatusTextBlock.Text = Matches.Count > 0
-                    ? "Поиск выполнен"
-                    : "Совпадения не найдены";
-            }
-            catch (Exception ex)
-            {
-                Matches.Clear();
-                CurrentMatchIndex = -1;
-                UpdateCounters();
-                ClearAllHighlights();
-                StatusTextBlock.Text = $"Ошибка regex: {ex.Message}";
-            }
-        }
-
-        private void NextButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (Matches.Count == 0)
-                return;
-
-            CurrentMatchIndex++;
-
-            if (CurrentMatchIndex >= Matches.Count)
-                CurrentMatchIndex = 0;
-
-            HighlightMatches();
-            UpdateCounters();
-            StatusTextBlock.Text = "Переход к следующему совпадению";
-        }
-
-        private void PrevButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (Matches.Count == 0)
-                return;
-
-            CurrentMatchIndex--;
-
-            if (CurrentMatchIndex < 0)
-                CurrentMatchIndex = Matches.Count - 1;
-
-            HighlightMatches();
-            UpdateCounters();
-            StatusTextBlock.Text = "Переход к предыдущему совпадению";
-        }
-
-        private void ReplaceCurrentButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (Matches.Count == 0 || CurrentMatchIndex < 0)
-                return;
-
-            try
-            {
-                string text = GetEditorText();
-                string pattern = PatternTextBox.Text;
-                string replacement = ReplacementTextBox.Text;
-
-                string newText = RegexService.ReplaceOnlyCurrent(text, pattern, replacement, CurrentMatchIndex);
-                SetEditorText(newText);
-
-                ReplacedCount++;
-                MarkDocumentDirty();
-
-                Matches = RegexService.FindMatches(newText, pattern);
-
-                if (Matches.Count == 0)
-                {
-                    CurrentMatchIndex = -1;
-                }
-                else if (CurrentMatchIndex >= Matches.Count)
-                {
-                    CurrentMatchIndex = 0;
-                }
-
-                UpdateCounters();
-                HighlightMatches();
-                StatusTextBlock.Text = "Текущее совпадение заменено";
-            }
-            catch (Exception ex)
-            {
-                StatusTextBlock.Text = $"Ошибка замены: {ex.Message}";
-            }
-        }
-
-        private void ReplaceAllButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                string text = GetEditorText();
-                string pattern = PatternTextBox.Text;
-                string replacement = ReplacementTextBox.Text;
-
-                MatchCollection matchesBeforeReplace = Regex.Matches(text, pattern);
-                ReplacedCount = matchesBeforeReplace.Count;
-
-                string newText = RegexService.ReplaceAll(text, pattern, replacement);
-                SetEditorText(newText);
-
-                if (ReplacedCount > 0)
-                    MarkDocumentDirty();
-
-                Matches = RegexService.FindMatches(newText, pattern);
-                CurrentMatchIndex = Matches.Count > 0 ? 0 : -1;
-
-                UpdateCounters();
-                HighlightMatches();
-                StatusTextBlock.Text = "Замена всех совпадений выполнена";
-            }
-            catch (Exception ex)
-            {
-                StatusTextBlock.Text = $"Ошибка замены: {ex.Message}";
-            }
-        }
-
         private async Task CreateNewDocumentAsync()
         {
             bool canContinue = await ConfirmCanContinueAsync();
+
             if (!canContinue)
                 return;
 
             SetEditorText(string.Empty);
 
-            FileState.Reset();
-            UpdateDocumentTitle();
-
+            ViewModel.ResetFileState();
             ResetRegexState();
-            MarkDocumentSaved();
+            ViewModel.MarkDocumentSaved();
 
-            StatusTextBlock.Text = "Создан новый документ";
+            ViewModel.SetStatus("Создан новый документ");
         }
 
         private async Task OpenDocumentCommandAsync()
         {
             bool canContinue = await ConfirmCanContinueAsync();
+
             if (!canContinue)
                 return;
 
@@ -568,6 +654,7 @@ F1      — справка",
         private async Task ExitApplicationAsync()
         {
             bool canContinue = await ConfirmCanContinueAsync();
+
             if (!canContinue)
                 return;
 
@@ -575,93 +662,21 @@ F1      — справка",
             Close();
         }
 
-        private async void MenuNew_Click(object sender, RoutedEventArgs e)
-        {
-            await CreateNewDocumentAsync();
-        }
-
-        private async void MenuOpen_Click(object sender, RoutedEventArgs e)
-        {
-            await OpenDocumentCommandAsync();
-        }
-
-        private async void MenuSave_Click(object sender, RoutedEventArgs e)
-        {
-            await SaveToCurrentFileAsync();
-        }
-
-        private async void MenuSaveAs_Click(object sender, RoutedEventArgs e)
-        {
-            await SaveAsFileAsync();
-        }
-
-        private async void MenuExit_Click(object sender, RoutedEventArgs e)
-        {
-            await ExitApplicationAsync();
-        }
-
-        private void MenuFind_Click(object sender, RoutedEventArgs e)
-        {
-            OpenRegexPanel();
-        }
-
-        private void MenuNextMatch_Click(object sender, RoutedEventArgs e)
-        {
-            NextButton_Click(sender, e);
-        }
-
-        private void MenuPrevMatch_Click(object sender, RoutedEventArgs e)
-        {
-            PrevButton_Click(sender, e);
-        }
-
-        private void MenuReplaceAll_Click(object sender, RoutedEventArgs e)
-        {
-            ReplaceAllButton_Click(sender, e);
-        }
-
-        private void MenuClearDocument_Click(object sender, RoutedEventArgs e)
-        {
-            SetEditorText(string.Empty);
-            ResetRegexState(closePanel: false);
-            MarkDocumentDirty();
-            StatusTextBlock.Text = "Документ очищен";
-        }
-
-        private async void MenuAbout_Click(object sender, RoutedEventArgs e)
-        {
-            await ShowAboutDialogAsync();
-        }
-
-        private async void MenuShortcuts_Click(object sender, RoutedEventArgs e)
-        {
-            await ShowShortcutsDialogAsync();
-        }
-
         private void ToggleStatusBarMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (ToggleStatusBarMenuItem.IsChecked)
-            {
-                StatusBarBorder.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = "Строка состояния показана";
-            }
-            else
-            {
-                StatusBarBorder.Visibility = Visibility.Collapsed;
-            }
+            ViewModel.IsStatusBarVisible = ToggleStatusBarMenuItem.IsChecked;
+
+            if (ViewModel.IsStatusBarVisible)
+                ViewModel.SetStatus("Строка состояния показана");
         }
 
         private void ToggleWordWrapMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            WordWrapEnabled = ToggleWordWrapMenuItem.IsChecked;
+            ViewModel.WordWrapEnabled = ToggleWordWrapMenuItem.IsChecked;
 
-            EditorBox.TextWrapping = WordWrapEnabled
-                ? TextWrapping.Wrap
-                : TextWrapping.NoWrap;
-
-            StatusTextBlock.Text = WordWrapEnabled
+            ViewModel.SetStatus(ViewModel.WordWrapEnabled
                 ? "Перенос строк включён"
-                : "Перенос строк выключен";
+                : "Перенос строк выключен");
         }
 
         private void EditorBox_TextChanged(object sender, RoutedEventArgs e)
@@ -671,55 +686,71 @@ F1      — справка",
             if (SuppressTextChanged)
                 return;
 
-            MarkDocumentDirty();
+            ViewModel.MarkDocumentDirty();
         }
 
-        private async void NewKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+        private void NewKeyboardAccelerator_Invoked(
+            KeyboardAccelerator sender,
+            KeyboardAcceleratorInvokedEventArgs args)
         {
             args.Handled = true;
-            await CreateNewDocumentAsync();
+            ViewModel.NewCommand.Execute(null);
         }
 
-        private async void OpenKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+        private void OpenKeyboardAccelerator_Invoked(
+            KeyboardAccelerator sender,
+            KeyboardAcceleratorInvokedEventArgs args)
         {
             args.Handled = true;
-            await OpenDocumentCommandAsync();
+            ViewModel.OpenCommand.Execute(null);
         }
 
-        private async void SaveKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+        private void SaveKeyboardAccelerator_Invoked(
+            KeyboardAccelerator sender,
+            KeyboardAcceleratorInvokedEventArgs args)
         {
             args.Handled = true;
-            await SaveToCurrentFileAsync();
+            ViewModel.SaveCommand.Execute(null);
         }
 
-        private async void SaveAsKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+        private void SaveAsKeyboardAccelerator_Invoked(
+            KeyboardAccelerator sender,
+            KeyboardAcceleratorInvokedEventArgs args)
         {
             args.Handled = true;
-            await SaveAsFileAsync();
+            ViewModel.SaveAsCommand.Execute(null);
         }
 
-        private void FindKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+        private void FindKeyboardAccelerator_Invoked(
+            KeyboardAccelerator sender,
+            KeyboardAcceleratorInvokedEventArgs args)
         {
             args.Handled = true;
-            OpenRegexPanel();
+            ViewModel.OpenRegexPanelCommand.Execute(null);
         }
 
-        private void NextKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+        private void NextKeyboardAccelerator_Invoked(
+            KeyboardAccelerator sender,
+            KeyboardAcceleratorInvokedEventArgs args)
         {
             args.Handled = true;
-            NextButton_Click(sender, new RoutedEventArgs());
+            ViewModel.NextMatchCommand.Execute(null);
         }
 
-        private void PrevKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+        private void PrevKeyboardAccelerator_Invoked(
+            KeyboardAccelerator sender,
+            KeyboardAcceleratorInvokedEventArgs args)
         {
             args.Handled = true;
-            PrevButton_Click(sender, new RoutedEventArgs());
+            ViewModel.PreviousMatchCommand.Execute(null);
         }
 
-        private async void HelpKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+        private void HelpKeyboardAccelerator_Invoked(
+            KeyboardAccelerator sender,
+            KeyboardAcceleratorInvokedEventArgs args)
         {
             args.Handled = true;
-            await ShowShortcutsDialogAsync();
+            ViewModel.ShowShortcutsCommand.Execute(null);
         }
     }
 }

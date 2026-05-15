@@ -19,7 +19,7 @@ namespace RegexTextEditor.Services
             {
                 _micaBackdrop = new MicaBackdrop
                 {
-                    Kind = MicaKind.Base
+                    Kind = MicaKind.BaseAlt
                 };
 
                 window.SystemBackdrop = _micaBackdrop;
@@ -43,18 +43,7 @@ namespace RegexTextEditor.Services
                 window.ExtendsContentIntoTitleBar = true;
                 window.SetTitleBar(dragRegion);
 
-                if (AppWindowTitleBar.IsCustomizationSupported())
-                {
-                    _appWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
-                    _appWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
-                    _appWindow.TitleBar.ButtonHoverBackgroundColor = ColorHelper.FromArgb(32, 255, 255, 255);
-                    _appWindow.TitleBar.ButtonPressedBackgroundColor = ColorHelper.FromArgb(56, 255, 255, 255);
-
-                    _appWindow.TitleBar.ButtonForegroundColor = Colors.White;
-                    _appWindow.TitleBar.ButtonInactiveForegroundColor = ColorHelper.FromArgb(140, 255, 255, 255);
-                    _appWindow.TitleBar.ButtonHoverForegroundColor = Colors.White;
-                    _appWindow.TitleBar.ButtonPressedForegroundColor = Colors.White;
-                }
+                ApplyTitleBarButtonTheme(ElementTheme.Dark);
 
                 void UpdateInsets()
                 {
@@ -77,6 +66,44 @@ namespace RegexTextEditor.Services
                 window.SizeChanged += (_, _) => UpdateInsets();
 
                 UpdateInsets();
+            }
+            catch
+            {
+            }
+        }
+
+        public void ApplyTitleBarButtonTheme(ElementTheme actualTheme)
+        {
+            try
+            {
+                if (_appWindow is null || !AppWindowTitleBar.IsCustomizationSupported())
+                    return;
+
+                bool isLightTheme = actualTheme == ElementTheme.Light;
+
+                _appWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
+                _appWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+
+                if (isLightTheme)
+                {
+                    _appWindow.TitleBar.ButtonForegroundColor = Colors.Black;
+                    _appWindow.TitleBar.ButtonInactiveForegroundColor = ColorHelper.FromArgb(150, 0, 0, 0);
+                    _appWindow.TitleBar.ButtonHoverForegroundColor = Colors.Black;
+                    _appWindow.TitleBar.ButtonPressedForegroundColor = Colors.Black;
+
+                    _appWindow.TitleBar.ButtonHoverBackgroundColor = ColorHelper.FromArgb(18, 0, 0, 0);
+                    _appWindow.TitleBar.ButtonPressedBackgroundColor = ColorHelper.FromArgb(30, 0, 0, 0);
+                }
+                else
+                {
+                    _appWindow.TitleBar.ButtonForegroundColor = Colors.White;
+                    _appWindow.TitleBar.ButtonInactiveForegroundColor = ColorHelper.FromArgb(140, 255, 255, 255);
+                    _appWindow.TitleBar.ButtonHoverForegroundColor = Colors.White;
+                    _appWindow.TitleBar.ButtonPressedForegroundColor = Colors.White;
+
+                    _appWindow.TitleBar.ButtonHoverBackgroundColor = ColorHelper.FromArgb(32, 255, 255, 255);
+                    _appWindow.TitleBar.ButtonPressedBackgroundColor = ColorHelper.FromArgb(56, 255, 255, 255);
+                }
             }
             catch
             {
